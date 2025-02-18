@@ -143,7 +143,53 @@ bool read_hba(
         
         if(!stream.eof())
         {
-            lvr2::logout::get() << lvr2::error << "Failed to parse kitti format: too much data per line" << lvr2::endl;
+            lvr2::logout::get() << lvr2::error << "Failed to parse hba format: too much data per line" << lvr2::endl;
+            out.clear();
+            return false;
+        }
+        out.push_back(pose);
+    }
+    return true;
+}
+
+
+bool read_tum(
+    const fs::path& file,
+    std::vector<Eigen::Isometry3f>& out
+)
+{
+    // The tum file format contains 8 numbers per line
+    // time tx ty tz x y z w
+    std::ifstream in;
+    in.open(file);
+
+    std::string line;
+    while(std::getline(in, line))
+    {
+        boost::trim(line);
+        std::stringstream stream(line);
+        Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
+
+        std::array<float, 8> data;
+
+        for (int i = 0; i < 8; i++)
+        {
+            if (!stream)
+            {
+                lvr2::logout::get() << lvr2::error << "Failed to parse tum format: not enough entries per line " << i << "/8" << lvr2::endl;
+                out.clear();
+                return false;
+            }
+            stream >> data[i];
+        }
+        
+        Eigen::Vector3f position(data[1], data[2], data[3]);
+        Eigen::Quaternionf orientation(data[7], data[4], data[5], data[6]);
+        pose.fromPositionOrientationScale(position, orientation, Eigen::Vector3f::Ones());
+        
+        if(!stream.eof())
+        {
+            lvr2::logout::get() << lvr2::error << "Failed to parse tum format: too much data per line" << lvr2::endl;
             out.clear();
             return false;
         }
@@ -166,12 +212,20 @@ std::vector<Eigen::Isometry3f> read_poses(
 
     std::vector<Eigen::Isometry3f> result;
 
-    // if ("tum" == format)
-    // {
-    //
-    // }
-    // else if ("kitti" == format)
-    if ("kitti" == format)
+    if ("tum" == format)
+    {
+        if (read_tum(file, result))
+        {
+            return result;
+        }
+        else
+        {
+            std::stringstream sstr;
+            sstr << "Failed to parse " << file << " as format 'tum'";
+            throw std::runtime_error(sstr.str());
+        }
+    }
+    else if ("kitti" == format)
     {
         if (read_kitty(file, result))
         {

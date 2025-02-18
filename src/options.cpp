@@ -13,7 +13,7 @@ Options::Options()
 {
     add_options()
     ("help", "output this message")
-    ("poses", po::value<string>()->required(), "Path to a file containing a pose for each input scan. Supported formats are 'kitti' and 'tum'")
+    ("poses", po::value<string>()->required(), "Path to a file containing a pose for each input scan. Supported formats are 'kitti', 'tum' and 'hba'")
     ("poses-filetype-hint", po::value<string>()->default_value("kitti"), "An optional hint on the format of the poses file. Otherwise the program tries to infer from the data")
     ("scans", po::value<string>()->required(), "Path to a directory containing the individual lidar scans")
     ("poses-output-file", po::value<string>(), "Save the poses to the specified file")
@@ -24,7 +24,7 @@ Options::Options()
 
     normal_est_.add_options()
     ("kn", po::value<uint32_t>(&normal_kn_)->default_value(50), "Number of nearest neighbor points used in normal estimation")
-    ("normal-estimation-method", po::value<uint32_t>(&normal_estimation_method_)->default_value(0), "Normal estimation method to use. Choose from 0: PCA (default), 1: RANSAC, 2: IPCA ilikebigbits, 3: IPCA exact")
+    ("normal-estimation-method", po::value<uint32_t>(&normal_estimation_method_)->default_value(3), "Normal estimation method to use. Choose from 0: PCA, 1: RANSAC, 2: IPCA ilikebigbits, 3: IPCA exact (default)")
     ;
 
     reconstruction_.add_options()
