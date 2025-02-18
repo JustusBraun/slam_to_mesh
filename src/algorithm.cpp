@@ -1,4 +1,5 @@
 #include <slam_to_mesh/algorithm.hpp>
+#include <slam_to_mesh/iterator.hpp>
 
 #include <boost/smart_ptr/shared_array.hpp>
 #include <lvr2/algorithm/NormalAlgorithms.hpp>
@@ -211,7 +212,28 @@ void deskew_scans(
             pts[i * 3 + 2] = point.z;
         }
     }
+}
 
 
+lvr2::PointBufferPtr remove_nan(const lvr2::PointBufferPtr& buffer)
+{
+    auto has_nan = [](const lvr2::BaseVector<float>& vec)
+    {
+        return std::isnan(vec.x)
+            || std::isnan(vec.y)
+            || std::isnan(vec.z);
+    };
+    
+    auto range = PointBufferRange(*buffer);
 
+    const size_t n_valid = std::count_if(range.begin(), range.end(), std::not_fn(has_nan));
+
+    lvr2::floatArr points(new float[n_valid * 3]);
+
+    // Copy all valid points
+    auto out = PointBufferRange(points, n_valid);
+    std::remove_copy_if(range.begin(), range.end(), out.begin(), has_nan);
+
+    // TODO: All other data???
+    return std::make_shared<lvr2::PointBuffer>(points, n_valid);
 }

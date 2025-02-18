@@ -27,7 +27,7 @@ lvr2::PointBufferPtr combine_pointclouds(
  */
 void estimate_pointcloud_normals(
     const std::vector<Eigen::Isometry3f>& poses,
-    lvr2::PointBufferPtr& buffer,
+    lvr2::PointBufferPtr& points,
     const Options& opts
 );
 
@@ -43,3 +43,11 @@ std::shared_ptr<lvr2::BaseMesh<lvr2::BaseVector<float>>> reconstruct_mesh(
     const Options& opts
 );
 
+
+/**
+ *  @brief Remove all NaN points from the pointcloud
+ *
+ *  @param buffer The pointcloud to filter
+ *  @return A new buffer without the nan points
+ */
+lvr2::PointBufferPtr remove_nan(const lvr2::PointBufferPtr& points);

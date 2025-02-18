@@ -54,6 +54,12 @@ int main(int argc, char** argv)
         lvr2::logout::get() << lvr2::error << "Could not create output directory: " << std::strerror(errno) << lvr2::endl;
     }
 
+    // Remove all nan points from the scans
+    for (auto& ptr: scans)
+    {
+        ptr = remove_nan(ptr);
+    }
+
     // Merge pointcloud
     auto combined = combine_pointclouds(poses, scans);
 
