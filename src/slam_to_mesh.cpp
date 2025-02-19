@@ -42,7 +42,7 @@ int main(int argc, char** argv)
     if (scans.size() != poses.size())
     {
         lvr2::logout::get() << lvr2::warning << "Poses and scans differ in size! " << poses.size() << " vs " << scans.size();
-        lvr2::logout::get() << "This can have unintended side effects if the poses and scans do not belong together!" << lvr2::endl;
+        lvr2::logout::get() << " This can have unintended side effects if the poses and scans do not belong together!" << lvr2::endl;
         const size_t min = std::min(poses.size(), scans.size());
         lvr2::logout::get() << lvr2::warning << "Resizing to " << min << " poses and scans!" << lvr2::endl;
         poses.resize(min);
@@ -63,6 +63,8 @@ int main(int argc, char** argv)
     // Merge pointcloud
     auto combined = combine_pointclouds(poses, scans);
 
+    lvr2::logout::get() << lvr2::info << "Combined pointclouds" << lvr2::endl;
+
     // Estimate normals
     estimate_pointcloud_normals(poses, combined, options);
 
@@ -70,6 +72,8 @@ int main(int argc, char** argv)
     auto mesh = reconstruct_mesh(combined, options);
     // Save the mesh
     {
+        lvr2::logout::get() << "Num vertices: " << mesh->numVertices() << lvr2::endl;
+        lvr2::logout::get() << "Num faces: " << mesh->numFaces() << lvr2::endl;
         fs::path mesh_file = options.output_directory();
         mesh_file = mesh_file.empty() ? "mesh.ply" : mesh_file / "mesh.ply";
         lvr2::SimpleFinalizer<lvr2::BaseVector<float>> fin;

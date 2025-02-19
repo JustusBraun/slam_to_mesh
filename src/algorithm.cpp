@@ -1,7 +1,10 @@
 #include <slam_to_mesh/algorithm.hpp>
 #include <slam_to_mesh/iterator.hpp>
+#include <slam_to_mesh/variant_channel.hpp>
 
 #include <boost/smart_ptr/shared_array.hpp>
+#include <boost/variant/apply_visitor.hpp>
+
 #include <lvr2/algorithm/NormalAlgorithms.hpp>
 #include <lvr2/algorithm/CleanupAlgorithms.hpp>
 #include <lvr2/reconstruction/AdaptiveKSearchSurface.hpp>
@@ -15,41 +18,71 @@ lvr2::PointBufferPtr combine_pointclouds(
     const std::vector<lvr2::PointBufferPtr>& scans
 )
 {
+    if (scans.empty())
+    {
+        lvr2::logout::get() << lvr2::error << "[combine_pointclouds] Parameter scans is an empty vector!" << lvr2::endl;
+        return nullptr;
+    }
+
+    if (poses.size() < scans.size())
+    {
+        lvr2::logout::get() << lvr2::error << "[combine_pointclouds] Not enough poses! Need 1 pose per scan! " << poses.size() << " vs " << scans.size() << lvr2::endl;
+        return nullptr;
+    }
+
     // Count the number of points
     size_t n_points = 0;
     for (const auto& scan: scans)
     {
         n_points += scan->numPoints();
     }
-
-    lvr2::floatArr points(new float[n_points * 3]);
-    auto out = std::make_shared<lvr2::PointBuffer>(points, n_points);
+    
+    // Allocate new buffer
+    lvr2::PointBufferPtr out = std::make_shared<lvr2::PointBuffer>();
+    
+    // Create a new channel with capacity n_points for each channel
+    for (const auto& [name, channel]: *scans[0])
+    {
+        CreateSameTypeChannelWithSize<lvr2::PointBuffer::mapped_type> creator(n_points);
+        out->insert_or_assign(name, boost::apply_visitor(creator, channel));
+    }
     out->addEmptyIndexChannel("frame_id", n_points, 1);
-    auto frame_ids = out->getIndexChannel("frame_id").get();
-
-    size_t idx = 0;
+    
+    // Copy the data
+    detail::PointBufferIterator pts_out(out->getPointArray().get());
+    uint32_t* ids_out = out->getIndexChannel("frame_id").get().dataPtr().get();
+    size_t out_idx = 0;
     for (size_t pos_idx = 0; pos_idx < std::min(poses.size(), scans.size()); pos_idx++)
     {
         const Eigen::Isometry3f pose = poses[pos_idx];
         const lvr2::PointBufferPtr& scan = scans[pos_idx];
 
-        // Copy all points
-        const auto pts = scan->getPointArray();
-        for (size_t i = 0; i < scan->numPoints(); i++)
+        auto to_map = [pose](const lvr2::BaseVector<float>& vec)
         {
-            Eigen::Vector3f point = pose * Eigen::Vector3f(pts.get() + i * 3);
-            points[(idx + i) * 3 + 0] = point.x();
-            points[(idx + i) * 3 + 1] = point.y();
-            points[(idx + i) * 3 + 2] = point.z();
-            
-            // Need this cast because otherwise template argument deduction failes
-            // in lvr2/types/ElementProxy.hpp
-            frame_ids[idx + i] = (unsigned int) pos_idx;
+            return pose.matrix() * vec;
+        };
+
+        auto range = PointBufferRange(*scan);
+        // Copy and transform all points
+        pts_out = std::transform(range.begin(), range.end(), pts_out, to_map);
+
+        // Store the pose index
+        ids_out = std::fill_n(ids_out, scan->numPoints(), pos_idx);
+
+        // TODO: Normals needs special handling, in theory we do not need to worry because we calculate them anyway
+
+        // Copy the rest of the channels
+        for (auto& [name, channel]: *out)
+        {
+            if ("points" == name || "frame_id" == name)
+            {
+                continue;
+            }
+            boost::apply_visitor(CopyChannel(channel, out_idx), scan->at(name));
         }
-        idx += scan->numPoints();
+        out_idx += scan->numPoints();
     }
 
-    // TODO: Copy all other sort of data
     return out;
 }
 
@@ -217,23 +250,30 @@ void deskew_scans(
 
 lvr2::PointBufferPtr remove_nan(const lvr2::PointBufferPtr& buffer)
 {
+    // Create a valid points mask
     auto has_nan = [](const lvr2::BaseVector<float>& vec)
     {
         return std::isnan(vec.x)
             || std::isnan(vec.y)
             || std::isnan(vec.z);
     };
-    
     auto range = PointBufferRange(*buffer);
-
+    std::vector<bool> mask(buffer->numPoints());
+    std::transform(range.begin(), range.end(), mask.begin(), has_nan);
     const size_t n_valid = std::count_if(range.begin(), range.end(), std::not_fn(has_nan));
 
-    lvr2::floatArr points(new float[n_valid * 3]);
+    auto out = std::make_shared<lvr2::PointBuffer>();
 
-    // Copy all valid points
-    auto out = PointBufferRange(points, n_valid);
-    std::remove_copy_if(range.begin(), range.end(), out.begin(), has_nan);
+    // Remove all invalid points using the mask
+    for (const auto& [name, channel]: *buffer)
+    {
+        out->insert_or_assign(name, boost::apply_visitor(
+            CreateSameTypeChannelWithSize<lvr2::PointBuffer::mapped_type>(n_valid),
+            channel
+        ));
+        
+        boost::apply_visitor(RemoveCopyIf(out->at(name), mask.begin()), channel);
+    }
 
-    // TODO: All other data???
-    return std::make_shared<lvr2::PointBuffer>(points, n_valid);
+    return out;
 }

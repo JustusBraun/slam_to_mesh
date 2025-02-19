@@ -5,6 +5,7 @@ project(slam_to_mesh)
 # Main dependency is LVR2
 find_package(LVR2 REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(OpenMP)
 
 # Add the tool(s)
 add_executable(
@@ -21,11 +22,18 @@ target_include_directories(
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
 )
 target_link_libraries(slam_to_mesh PRIVATE lvr2::lvr2 Eigen3::Eigen)
+
+# Optional dependencies
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(slam_to_mesh PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+
 set_target_properties(
     slam_to_mesh
     PROPERTIES
-    CMAKE_CXX_STANDARD 23
-    CMAKE_CXX_STANDARD_REQUIRED ON
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
 )
 
 # Install the tool(s)
