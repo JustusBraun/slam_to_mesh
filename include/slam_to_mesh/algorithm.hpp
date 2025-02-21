@@ -1,5 +1,6 @@
 #pragma once
 
+#include <slam_to_mesh/dataset.hpp>
 #include <slam_to_mesh/options.hpp>
 
 #include <lvr2/types/PointBuffer.hpp>
@@ -17,8 +18,7 @@ void deskew_scans(
  *  @brief Create a combined pointcloud from the dataset
  */
 lvr2::PointBufferPtr combine_pointclouds(
-    const std::vector<Eigen::Isometry3f>& poses,
-    const std::vector<lvr2::PointBufferPtr>& scans
+    const Dataset& dataset
 );
 
 

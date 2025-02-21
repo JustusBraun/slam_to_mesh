@@ -1,6 +1,7 @@
 #include <slam_to_mesh/algorithm.hpp>
 #include <slam_to_mesh/iterator.hpp>
 #include <slam_to_mesh/variant_channel.hpp>
+#include <slam_to_mesh/logging.hpp>
 
 #include <boost/smart_ptr/shared_array.hpp>
 #include <boost/variant/apply_visitor.hpp>
@@ -14,25 +15,24 @@
 #include <lvr2/geometry/PMPMesh.hpp>
 
 lvr2::PointBufferPtr combine_pointclouds(
-    const std::vector<Eigen::Isometry3f>& poses,
-    const std::vector<lvr2::PointBufferPtr>& scans
+    const Dataset& ds
 )
 {
-    if (scans.empty())
+    if (ds.scans.empty())
     {
-        lvr2::logout::get() << lvr2::error << "[combine_pointclouds] Parameter scans is an empty vector!" << lvr2::endl;
+        LOG_ERROR("Input dataset contains no scans!");
         return nullptr;
     }
 
-    if (poses.size() < scans.size())
+    if (ds.poses.size() < ds.scans.size())
     {
-        lvr2::logout::get() << lvr2::error << "[combine_pointclouds] Not enough poses! Need 1 pose per scan! " << poses.size() << " vs " << scans.size() << lvr2::endl;
+        LOG_ERROR("Input dataset is missing poses for some scans! Poses: {} Scans: {}", ds.poses.size(), ds.scans.size());
         return nullptr;
     }
 
     // Count the number of points
     size_t n_points = 0;
-    for (const auto& scan: scans)
+    for (const auto& scan: ds.scans)
     {
         n_points += scan->numPoints();
     }
@@ -41,7 +41,7 @@ lvr2::PointBufferPtr combine_pointclouds(
     lvr2::PointBufferPtr out = std::make_shared<lvr2::PointBuffer>();
     
     // Create a new channel with capacity n_points for each channel
-    for (const auto& [name, channel]: *scans[0])
+    for (const auto& [name, channel]: *ds.scans[0])
     {
         CreateSameTypeChannelWithSize<lvr2::PointBuffer::mapped_type> creator(n_points);
         out->insert_or_assign(name, boost::apply_visitor(creator, channel));
@@ -52,10 +52,10 @@ lvr2::PointBufferPtr combine_pointclouds(
     detail::PointBufferIterator pts_out(out->getPointArray().get());
     uint32_t* ids_out = out->getIndexChannel("frame_id").get().dataPtr().get();
     size_t out_idx = 0;
-    for (size_t pos_idx = 0; pos_idx < std::min(poses.size(), scans.size()); pos_idx++)
+    for (size_t pos_idx = 0; pos_idx < std::min(ds.poses.size(), ds.scans.size()); pos_idx++)
     {
-        const Eigen::Isometry3f pose = poses[pos_idx];
-        const lvr2::PointBufferPtr& scan = scans[pos_idx];
+        const Eigen::Isometry3f pose = ds.poses[pos_idx];
+        const lvr2::PointBufferPtr& scan = ds.scans[pos_idx];
 
         auto to_map = [pose](const lvr2::BaseVector<float>& vec)
         {
@@ -96,7 +96,7 @@ void estimate_pointcloud_normals(
     using Vector = lvr2::BaseVector<float>;
     using Normal = lvr2::Normal<float>;
 
-    lvr2::logout::get() << lvr2::info << "[estimate_pointcloud_normals] Nearest Neighbors: " << opts.normal_estimation_kn() << "; Normal Estimation Method: " << opts.normal_estimation_method() << lvr2::endl;
+    LOG_INFO("Nearest Neighbors: {}; Normal Estimation Method: {}", opts.normal_estimation_kn(), opts.normal_estimation_method());
 
     lvr2::AdaptiveKSearchSurface<Vector> surface(
         cloud,
@@ -111,7 +111,7 @@ void estimate_pointcloud_normals(
 
     if (!cloud->hasNormals())
     {
-        lvr2::logout::get() << lvr2::error << "[estimate_pointcloud_normals] Buffer has no normals after normal calculation!" << lvr2::endl;
+        LOG_ERROR("Buffer has no normals after normal calculation!");
         return;
     }
 
@@ -207,11 +207,8 @@ void deskew_scans(
 
         if (!ts)
         {
-            lvr2::logout::get() << lvr2::warning << "No time column!" << lvr2::endl;
-            for (auto channel: *scan)
-            {
-                lvr2::logout::get() << lvr2::info << channel.first << lvr2::endl;
-            }
+            LOG_WARNING("The scan {} has no time column!", i);
+            continue;
         }
 
         auto pts = scan->getPointArray();

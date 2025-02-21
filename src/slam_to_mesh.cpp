@@ -3,6 +3,7 @@
 #include <slam_to_mesh/io/poses.hpp>
 #include <slam_to_mesh/io/scans.hpp>
 #include <slam_to_mesh/algorithm.hpp>
+#include <slam_to_mesh/logging.hpp>
 
 #include <lvr2/util/Logging.hpp>
 #include <lvr2/util/TransformUtils.hpp>
@@ -26,54 +27,101 @@ int main(int argc, char** argv)
 
     lvr2::logout::get().setLogLevel(lvr2::LogLevel::info);
 
-    lvr2::logout::get() << lvr2::info << "Reading poses from " << options.get_poses_path() << lvr2::endl;
+    LOG_INFO("Reading poses from {}", options.get_poses_path());
 
     std::vector<Eigen::Isometry3f> poses = read_poses(options.get_poses_path(), options.get_poses_filetype_hint());
 
-    lvr2::logout::get() << lvr2::info << "Got " << poses.size() << " poses" << lvr2::endl;
+    LOG_INFO("Got {} poses", poses.size());
 
     // Read the pointclouds
-    lvr2::logout::get() << lvr2::info << "Reading scans from " << options.get_scans_path() << lvr2::endl;
+    LOG_INFO("Reading scans from {}", options.get_scans_path());
 
     std::vector<lvr2::PointBufferPtr> scans = read_scans(options.get_scans_path());
 
-    lvr2::logout::get() << lvr2::info << "Got " << scans.size() << " scans" << lvr2::endl;
+    LOG_INFO("Got {} scans", scans.size());
 
     if (scans.size() != poses.size())
     {
-        lvr2::logout::get() << lvr2::warning << "Poses and scans differ in size! " << poses.size() << " vs " << scans.size();
-        lvr2::logout::get() << " This can have unintended side effects if the poses and scans do not belong together!" << lvr2::endl;
+        LOG_WARNING("Poses and scans differ in size! {} vs {}", poses.size(), scans.size());
+        LOG_WARNING("This can have unintended side effects if the poses and scans do not belong together!");
         const size_t min = std::min(poses.size(), scans.size());
-        lvr2::logout::get() << lvr2::warning << "Resizing to " << min << " poses and scans!" << lvr2::endl;
+        LOG_WARNING("Resizing to {} poses and scans!", min);
         poses.resize(min);
         scans.resize(min);
     }
 
-    if (!options.output_directory().empty() && !fs::create_directories(options.output_directory() / "pcd"))
+    Dataset dataset;
+    dataset.poses = poses;
+    dataset.scans = scans;
+
+    if (options.get_processing_range())
     {
-        lvr2::logout::get() << lvr2::error << "Could not create output directory: " << std::strerror(errno) << lvr2::endl;
+        auto range = options.get_processing_range().value();
+
+        if (range.first >= range.second)
+        {
+            LOG_ERROR("Specified range [{}, {}) is invalid!", range.first, range.second);
+            return -1;
+        }
+
+        if (range.second > dataset.scans.size())
+        {
+            LOG_ERROR(
+                "Specified range end '{}' cannot be larger than the number of scans & poses! ({})",
+                range.second, dataset.scans.size()
+            );
+            return -1;
+        }
+
+        range.second = std::min(dataset.poses.size(), range.second);
+
+        dataset.poses.erase(dataset.poses.begin(), dataset.poses.begin() + range.first);
+        dataset.scans.erase(dataset.scans.begin(), dataset.scans.begin() + range.first);
+        
+        dataset.poses.resize(range.second - range.first);
+        dataset.scans.resize(range.second - range.first);
+
+        LOG_INFO("Using dataset range [{}, {})", range.first, range.second);
+    }
+    
+    if (!options.output_directory().empty())
+    {
+        std::error_code ec;
+        fs::create_directories(options.output_directory() / "pcd", ec);
+
+        if (ec)
+        {
+            LOG_ERROR("Could not create output directory: {}", ec.message());
+            return -1;
+        }
     }
 
     // Remove all nan points from the scans
-    for (auto& ptr: scans)
+    for (auto& ptr: dataset.scans)
     {
         ptr = remove_nan(ptr);
     }
 
     // Merge pointcloud
-    auto combined = combine_pointclouds(poses, scans);
+    auto combined = combine_pointclouds(dataset);
 
-    lvr2::logout::get() << lvr2::info << "Combined pointclouds" << lvr2::endl;
+    LOG_INFO("Build combined pointcloud");
 
     // Estimate normals
-    estimate_pointcloud_normals(poses, combined, options);
+    estimate_pointcloud_normals(dataset.poses, combined, options);
+    if (!combined->hasNormals())
+    {
+        LOG_ERROR("Failed to estimate point normals!");
+        return -1;
+    }
+    LOG_INFO("Estimated point normals");
 
     // Reconstruct mesh
     auto mesh = reconstruct_mesh(combined, options);
     // Save the mesh
     {
-        lvr2::logout::get() << "Num vertices: " << mesh->numVertices() << lvr2::endl;
-        lvr2::logout::get() << "Num faces: " << mesh->numFaces() << lvr2::endl;
+        LOG_INFO("Num vertices: {}", mesh->numVertices());
+        LOG_INFO("Num faces: {}", mesh->numFaces());
         fs::path mesh_file = options.output_directory();
         mesh_file = mesh_file.empty() ? "mesh.ply" : mesh_file / "mesh.ply";
         lvr2::SimpleFinalizer<lvr2::BaseVector<float>> fin;
@@ -86,15 +134,15 @@ int main(int argc, char** argv)
     // Write hba format
     if (!options.output_directory().empty())
     {
-        write_scans(options.output_directory() / "pcd", scans, "pcd");
+        write_scans(options.output_directory() / "pcd", dataset.scans, "pcd");
     }
 
     if (options.save_poses())
     {
-        lvr2::logout::get() << lvr2::info << "Saving poses to " << options.poses_output_file() << " (Format: " << options.poses_output_format() << ")" << lvr2::endl;
+        LOG_INFO("Saving poses to {} (Format: {})", options.poses_output_file(), options.poses_output_format());
         write_poses(
             options.poses_output_file(),
-            poses,
+            dataset.poses,
             options.poses_output_format()
         );
     }

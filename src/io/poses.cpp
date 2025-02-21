@@ -1,4 +1,5 @@
 #include <slam_to_mesh/io/poses.hpp>
+#include <slam_to_mesh/logging.hpp>
 #include <lvr2/util/Logging.hpp>
 #include <cctype>
 #include <fstream>
@@ -40,7 +41,7 @@ void write_poses(
 {
     if (fs::exists(file) && !overwrite)
     {
-        lvr2::logout::get() << lvr2::error << "File " << file << " already exists!" << lvr2::endl;
+        LOG_ERROR("The file {} already exists!", file);
         return;
     }
 
@@ -87,7 +88,7 @@ bool read_kitty(
             {
                 if (!stream)
                 {
-                    lvr2::logout::get() << lvr2::error << "Failed to parse kitti format: not enough entries per line " << (row * 4 + col) << "/12" << lvr2::endl;
+                    LOG_ERROR("Failed to parse kitti format: not enough entries per line {}/12", row * 4 + col);
                     out.clear();
                     return false;
                 }
@@ -97,7 +98,7 @@ bool read_kitty(
         
         if(!stream.eof())
         {
-            lvr2::logout::get() << lvr2::error << "Failed to parse kitti format: too much data per line" << lvr2::endl;
+            LOG_ERROR("Failed to parse kitti format: too much data per line!");
             out.clear();
             return false;
         }
@@ -130,7 +131,7 @@ bool read_hba(
         {
             if (!stream)
             {
-                lvr2::logout::get() << lvr2::error << "Failed to parse hba format: not enough entries per line " << i << "/7" << lvr2::endl;
+                LOG_ERROR("Failed to parse hba format: not enough entries per line {}/7", i);
                 out.clear();
                 return false;
             }
@@ -143,7 +144,7 @@ bool read_hba(
         
         if(!stream.eof())
         {
-            lvr2::logout::get() << lvr2::error << "Failed to parse hba format: too much data per line" << lvr2::endl;
+            LOG_ERROR("Failed to parse hba format: too much data per line!");
             out.clear();
             return false;
         }
@@ -176,7 +177,7 @@ bool read_tum(
         {
             if (!stream)
             {
-                lvr2::logout::get() << lvr2::error << "Failed to parse tum format: not enough entries per line " << i << "/8" << lvr2::endl;
+                LOG_ERROR("Failed to parse tum format: not enough entries per line {}/8", i);
                 out.clear();
                 return false;
             }
@@ -189,7 +190,7 @@ bool read_tum(
         
         if(!stream.eof())
         {
-            lvr2::logout::get() << lvr2::error << "Failed to parse tum format: too much data per line" << lvr2::endl;
+            LOG_ERROR("Failed to parse tum format: too much data per line!");
             out.clear();
             return false;
         }
@@ -206,7 +207,7 @@ std::vector<Eigen::Isometry3f> read_poses(
 {
     if (!fs::exists(file))
     {
-        lvr2::logout::get() << lvr2::error << "File " << file << " does not exist!" << lvr2::endl;
+        LOG_ERROR("The file {} does not exist!", file);
         return {};
     }
 

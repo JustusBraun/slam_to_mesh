@@ -16,6 +16,8 @@ Options::Options()
     ("poses", po::value<string>()->required(), "Path to a file containing a pose for each input scan. Supported formats are 'kitti', 'tum' and 'hba'")
     ("poses-filetype-hint", po::value<string>()->default_value("kitti"), "An optional hint on the format of the poses file. Otherwise the program tries to infer from the data")
     ("scans", po::value<string>()->required(), "Path to a directory containing the individual lidar scans")
+    ("range", po::value<std::vector<size_t>>()->multitoken(),
+     "Limits the range of scans & poses to process to [arg0, arg1)")
     ("poses-output-file", po::value<string>(), "Save the poses to the specified file")
     ("poses-output-format", po::value<string>()->default_value("kitty"), "The format to save the poses in")
     ("output-directory", po::value<string>(), "The directory to output converted data to")
@@ -74,6 +76,17 @@ std::string Options::get_poses_filetype_hint() const
 fs::path Options::get_scans_path() const
 {
     return fs::path(vars_["scans"].as<std::string>());
+}
+
+std::optional<std::pair<size_t, size_t>> Options::get_processing_range() const
+{
+    if (vars_.count("range"))
+    {
+        const auto range = vars_["range"].as<std::vector<size_t>>();
+        return std::pair(range.at(0), range.at(1));
+    }
+
+    return std::nullopt;
 }
 
 bool Options::save_poses() const

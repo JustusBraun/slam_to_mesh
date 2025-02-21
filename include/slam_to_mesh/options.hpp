@@ -23,6 +23,8 @@ public:
 
     std::filesystem::path get_scans_path() const;
 
+    std::optional<std::pair<size_t, size_t>> get_processing_range() const;
+
     bool save_poses() const;
 
     std::filesystem::path poses_output_file() const;
