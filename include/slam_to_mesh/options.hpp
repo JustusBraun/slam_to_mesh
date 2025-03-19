@@ -35,9 +35,19 @@ public:
 
     bool save_combined_points() const;
 
+    bool disable_pcl_downsampling() const;
+
+    bool disable_statistical_outlier_removal() const;
+
+    size_t statistical_outlier_removal_neighbors() const;
+
+    float statistical_outlier_removal_factor() const;
+
     /// Normal estimation
 
     uint32_t normal_estimation_kn() const;
+
+    uint32_t normal_estimation_ki() const;
 
     uint32_t normal_estimation_method() const;
 
@@ -49,6 +59,8 @@ public:
 
     uint32_t rda_threshold() const;
 
+    uint32_t fill_holes_threshold() const;
+
 private:
     boost::program_options::variables_map vars_;
 
@@ -56,10 +68,15 @@ private:
 
     boost::program_options::options_description reconstruction_;
 
+    size_t sor_nn_;
+    float sor_factor_;
+
     uint32_t normal_kn_;
+    uint32_t normal_ki_;
     uint32_t normal_estimation_method_;
     
     float voxel_size_;
     uint32_t reconstruction_kd_;
     uint32_t rda_thresh_;
+    uint32_t fill_holes_thresh_;
 };

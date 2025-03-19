@@ -70,6 +70,45 @@ public:
         return *this;
     }
 
+    PointBufferIterator operator++(int)
+    {
+        auto old = *this;
+        ptr_ += 3;
+        return old;
+    }
+
+    PointBufferIterator& operator+=(const difference_type& diff)
+    {
+        ptr_ += diff * 3;
+        return *this;
+    }
+
+    PointBufferIterator operator+(const difference_type& diff) const
+    {
+        return PointBufferIterator(ptr_ + diff * 3);
+    }
+
+    PointBufferIterator& operator-=(const difference_type& diff)
+    {
+        ptr_ -= diff * 3;
+        return *this;
+    }
+
+    PointBufferIterator operator-(const difference_type& diff) const
+    {
+        return PointBufferIterator(ptr_ - diff * 3);
+    }
+
+    difference_type operator-(const PointBufferIterator& other) const
+    {
+        return (ptr_ - other.ptr_) / 3;
+    }
+
+    ElementProxy operator[](const difference_type i) const
+    {
+        return ElementProxy(ptr_ + (i * 3));
+    }
+
     ElementProxy operator*()
     {
         return ElementProxy(ptr_);
@@ -80,3 +119,11 @@ private:
 };
 
 } // namespace detail
+
+inline detail::PointBufferIterator operator+(
+    const detail::PointBufferIterator::difference_type& n,
+    const detail::PointBufferIterator& it
+)
+{
+    return it + n;
+}

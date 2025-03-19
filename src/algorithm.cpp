@@ -12,6 +12,7 @@
 #include <lvr2/reconstruction/FastReconstruction.hpp>
 #include <lvr2/reconstruction/FastBox.hpp>
 #include <lvr2/reconstruction/PointsetGrid.hpp>
+#include <lvr2/registration/OctreeReduction.hpp>
 #include <lvr2/geometry/PMPMesh.hpp>
 
 lvr2::PointBufferPtr combine_pointclouds(
@@ -146,6 +147,12 @@ void estimate_pointcloud_normals(
         ++monitor;
     }
     monitor.terminate();
+
+    if (opts.normal_estimation_ki())
+    {
+        surface.setKi(opts.normal_estimation_ki());
+        surface.interpolateSurfaceNormals();
+    }
 }
 
 
@@ -186,6 +193,13 @@ std::shared_ptr<lvr2::BaseMesh<lvr2::BaseVector<float>>> reconstruct_mesh(
     if (opts.rda_threshold() > 0)
     {
         lvr2::removeDanglingCluster(*mesh, opts.rda_threshold());
+    }
+    
+    if (opts.fill_holes_threshold() > 0)
+    {
+        // The lvr2::naiveFillSmallHoles function does raise exceptions
+        // so we just use the PMPMesh method instead
+        mesh->fillHoles(opts.fill_holes_threshold());
     }
 
     return mesh;
@@ -266,6 +280,74 @@ lvr2::PointBufferPtr remove_nan(const lvr2::PointBufferPtr& buffer)
     {
         out->insert_or_assign(name, boost::apply_visitor(
             CreateSameTypeChannelWithSize<lvr2::PointBuffer::mapped_type>(n_valid),
+            channel
+        ));
+        
+        boost::apply_visitor(RemoveCopyIf(out->at(name), mask.begin()), channel);
+    }
+
+    return out;
+}
+
+
+lvr2::PointBufferPtr voxel_downsample(const lvr2::PointBufferPtr& points, const float voxel_size)
+{
+    lvr2::OctreeReductionAlgorithm reduction(voxel_size, 1, lvr2::OctreeType(lvr2::NEAREST_CENTER));
+
+    reduction.setPointBuffer(points);
+
+    return reduction.getReducedPoints();
+}
+
+
+lvr2::PointBufferPtr statistical_outlier_removal(const lvr2::PointBufferPtr& points, const size_t neighbors, const float factor)
+{
+    using Vector = lvr2::BaseVector<float>;
+    lvr2::SearchTreeFlann<Vector> tree(points);
+    std::vector<float> distances(points->numPoints());
+    lvr2::floatArr pts = points->getPointArray();
+    
+    lvr2::Monitor monitor(lvr2::LogLevel::info, std::format("[{}] Calculating average distances", __func__), points->numPoints());
+
+    // Calculate the average distance of each point to its n neighbors.
+    #pragma omp parallel
+    {
+    std::vector<size_t> _indices;
+    std::vector<float> _dists;
+        #pragma omp for
+        for (size_t i = 0; i < points->numPoints(); i++)
+        {
+            const Vector vec(pts[i * 3 + 0], pts[i * 3 + 1], pts[i * 3 + 2]);
+            tree.kSearch(vec, neighbors, _indices, _dists);
+            
+            distances[i] = std::accumulate(_dists.begin(), _dists.end(), 0.0) / neighbors;
+
+            #pragma omp critical
+            ++monitor;
+        }
+    }
+    monitor.terminate();
+
+    // Calculate the distance Mean and stddev
+    const float mean = std::accumulate(distances.begin(), distances.end(), 0.0) / distances.size();
+    const float variance = std::transform_reduce(
+        distances.begin(), distances.end(), 0.0, std::plus<float>(),
+        [mean](const float& dist){return std::pow(dist - mean, 2);}
+    ) / distances.size();
+    
+    // Create a mask for point removal, points with an average distance to their
+    // neighbors larger than thresh will be removed
+    const float thresh = mean + factor * std::sqrt(variance);
+    std::vector<bool> mask(distances.size());
+    std::transform(distances.begin(), distances.end(), mask.begin(), [thresh](const float dist){ return dist > thresh;});
+
+    // Create the new filtered buffer and return
+    const size_t n_keep = std::count(mask.begin(), mask.end(), false);
+    auto out = std::make_shared<lvr2::PointBuffer>();
+    for (const auto& [name, channel]: *points)
+    {
+        out->insert_or_assign(name, boost::apply_visitor(
+            CreateSameTypeChannelWithSize<lvr2::PointBuffer::mapped_type>(n_keep),
             channel
         ));
         

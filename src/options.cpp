@@ -22,10 +22,15 @@ Options::Options()
     ("poses-output-format", po::value<string>()->default_value("kitty"), "The format to save the poses in")
     ("output-directory", po::value<string>(), "The directory to output converted data to")
     ("save-combined-points", "Save the combined pointcloud to the output directory")
+    ("disable-voxel-downsampling", po::value<bool>(), "Do not downsample the combined pointcloud to a uniform cloud with a voxel resolution of 0.01 meter")
+    ("disable-statistical-outlier-removal", po::value<bool>(), "Do not apply statistical outlier removal to the combined pointcloud")
+    ("sor-neighbors", po::value<size_t>(&sor_nn_)->default_value(50), "The number of neighbors to use in statistical outlier removal")
+    ("sor-sigma-factor", po::value<float>(&sor_factor_)->default_value(2.0), "The factor to use in statistical outlier removal. Higher equals less strict, lower equals more agressive removal of points")
     ;
 
     normal_est_.add_options()
     ("kn", po::value<uint32_t>(&normal_kn_)->default_value(50), "Number of nearest neighbor points used in normal estimation")
+    ("ki", po::value<uint32_t>(&normal_ki_)->default_value(50), "Number of nearest neighbor normals used in normal interpolation (smoothing)")
     ("normal-estimation-method", po::value<uint32_t>(&normal_estimation_method_)->default_value(3), "Normal estimation method to use. Choose from 0: PCA, 1: RANSAC, 2: IPCA ilikebigbits, 3: IPCA exact (default)")
     ;
 
@@ -33,6 +38,7 @@ Options::Options()
     ("voxel-size,v", po::value<float>(&voxel_size_)->default_value(0.25), "The resolution of the mesh in meter")
     ("kd", po::value<uint32_t>(&reconstruction_kd_)->default_value(50), "The number of nearest neighbors used in distance calculation")
     ("remove-isolated-cluster-threshold", po::value<uint32_t>(&rda_thresh_)->default_value(10), "Remove connected triangle clusters with less then arg triangles")
+    ("fill-holes-threshold", po::value<uint32_t>(&fill_holes_thresh_)->default_value(10), "Fill holes with a perimeter of less than arg edges")
     ;
 
     this->add(normal_est_);
@@ -118,9 +124,34 @@ bool Options::save_combined_points() const
     return vars_.count("save-combined-points");
 }
 
+bool Options::disable_pcl_downsampling() const
+{
+    return vars_.count("disable-voxel-downsampling");
+}
+
+bool Options::disable_statistical_outlier_removal() const
+{
+    return vars_.count("disable-statistical-outlier-removal");
+}
+
+size_t Options::statistical_outlier_removal_neighbors() const
+{
+    return sor_nn_;
+}
+
+float Options::statistical_outlier_removal_factor() const
+{
+    return sor_factor_;
+}
+
 uint32_t Options::normal_estimation_kn() const
 {
     return normal_kn_;
+}
+
+uint32_t Options::normal_estimation_ki() const
+{
+    return normal_ki_;
 }
 
 uint32_t Options::normal_estimation_method() const
@@ -141,4 +172,9 @@ uint32_t Options::reconstruction_kd() const
 uint32_t Options::rda_threshold() const
 {
     return rda_thresh_;
+}
+
+uint32_t Options::fill_holes_threshold() const
+{
+    return fill_holes_thresh_;
 }

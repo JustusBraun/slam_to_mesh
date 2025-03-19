@@ -51,3 +51,26 @@ std::shared_ptr<lvr2::BaseMesh<lvr2::BaseVector<float>>> reconstruct_mesh(
  *  @return A new buffer without the nan points
  */
 lvr2::PointBufferPtr remove_nan(const lvr2::PointBufferPtr& points);
+
+
+/**
+ *  @brief Use voxel downsampling to reduce the pointcloud to a consistent density
+ *
+ */
+lvr2::PointBufferPtr voxel_downsample(const lvr2::PointBufferPtr& points, const float voxel_size);
+
+
+/**
+ *  @brief Remove outliers using statistical outlier removal
+ *
+ *  This algorithm calculates the average distance and the standard deviation from each point to its neighbors.
+ *  Then all points with an average distance larger than mean + stddev * factor are removed.
+ *
+ *  @param points The pointcloud to filter
+ *  @param neighbors The number of nearest neighbors used in the distance calcualtion
+ *  @param factor The factor to use in the outlier removal calculation
+ *
+ *  @return The filtered pointcloud
+ *
+ */
+lvr2::PointBufferPtr statistical_outlier_removal(const lvr2::PointBufferPtr& points, const size_t neighbors, const float factor);

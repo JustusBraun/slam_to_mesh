@@ -102,10 +102,33 @@ int main(int argc, char** argv)
         ptr = remove_nan(ptr);
     }
 
+    // TODO: Write individual scans to output format if requested
+
     // Merge pointcloud
     auto combined = combine_pointclouds(dataset);
-
     LOG_INFO("Build combined pointcloud");
+    // Free the memory we do not need the individual scans anymore
+    dataset.scans.clear();
+
+    if (!options.disable_statistical_outlier_removal())
+    {
+        combined = statistical_outlier_removal(
+            combined,
+            options.statistical_outlier_removal_neighbors(),
+            options.statistical_outlier_removal_factor()
+        );
+        LOG_INFO(
+            "Applied statistical outlier removal with {} neighbors and stddev factor {}",
+            options.statistical_outlier_removal_neighbors(),
+            options.statistical_outlier_removal_factor()
+        );
+    }
+
+    if (!options.disable_pcl_downsampling())
+    {
+        combined = voxel_downsample(combined, 0.01);
+        LOG_INFO("Downsampled pointcloud with voxel size {}m", 0.01);
+    }
 
     // Estimate normals
     estimate_pointcloud_normals(dataset.poses, combined, options);
@@ -128,13 +151,6 @@ int main(int argc, char** argv)
         auto buffer = fin.apply(*mesh);
         lvr2::ModelFactory io;
         io.saveModel(std::make_shared<lvr2::Model>(buffer), mesh_file);
-    }
-
-
-    // Write hba format
-    if (!options.output_directory().empty())
-    {
-        write_scans(options.output_directory() / "pcd", dataset.scans, "pcd");
     }
 
     if (options.save_poses())
