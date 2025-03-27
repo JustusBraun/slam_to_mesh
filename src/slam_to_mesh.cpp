@@ -51,8 +51,8 @@ int main(int argc, char** argv)
     }
 
     Dataset dataset;
-    dataset.poses = poses;
-    dataset.scans = scans;
+    dataset.poses = std::move(poses);
+    dataset.scans = std::move(scans);
 
     if (options.get_processing_range())
     {
@@ -131,13 +131,19 @@ int main(int argc, char** argv)
     }
 
     // Estimate normals
-    estimate_pointcloud_normals(dataset.poses, combined, options);
-    if (!combined->hasNormals())
+    if (!combined->hasNormals() || options.recompute_normals())
     {
-        LOG_ERROR("Failed to estimate point normals!");
-        return -1;
+        estimate_pointcloud_normals(dataset.poses, combined, options);
+        if (!combined->hasNormals())
+        {
+            LOG_ERROR("Failed to estimate point normals!");
+            return -1;
+        }
+        LOG_INFO("Estimated point normals");
     }
-    LOG_INFO("Estimated point normals");
+    {
+        LOG_INFO("Using the normals from the input scans");
+    }
 
     // Reconstruct mesh
     auto mesh = reconstruct_mesh(combined, options);

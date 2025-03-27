@@ -22,13 +22,14 @@ Options::Options()
     ("poses-output-format", po::value<string>()->default_value("kitty"), "The format to save the poses in")
     ("output-directory", po::value<string>(), "The directory to output converted data to")
     ("save-combined-points", "Save the combined pointcloud to the output directory")
-    ("disable-voxel-downsampling", po::value<bool>(), "Do not downsample the combined pointcloud to a uniform cloud with a voxel resolution of 0.01 meter")
-    ("disable-statistical-outlier-removal", po::value<bool>(), "Do not apply statistical outlier removal to the combined pointcloud")
+    ("disable-voxel-downsampling", "Do not downsample the combined pointcloud to a uniform cloud with a voxel resolution of 0.01 meter")
+    ("disable-statistical-outlier-removal", "Do not apply statistical outlier removal to the combined pointcloud")
     ("sor-neighbors", po::value<size_t>(&sor_nn_)->default_value(50), "The number of neighbors to use in statistical outlier removal")
     ("sor-sigma-factor", po::value<float>(&sor_factor_)->default_value(2.0), "The factor to use in statistical outlier removal. Higher equals less strict, lower equals more agressive removal of points")
     ;
 
     normal_est_.add_options()
+    ("recompute", "Recompute the normals if the input scans already have them")
     ("kn", po::value<uint32_t>(&normal_kn_)->default_value(50), "Number of nearest neighbor points used in normal estimation")
     ("ki", po::value<uint32_t>(&normal_ki_)->default_value(50), "Number of nearest neighbor normals used in normal interpolation (smoothing)")
     ("normal-estimation-method", po::value<uint32_t>(&normal_estimation_method_)->default_value(3), "Normal estimation method to use. Choose from 0: PCA, 1: RANSAC, 2: IPCA ilikebigbits, 3: IPCA exact (default)")
@@ -142,6 +143,11 @@ size_t Options::statistical_outlier_removal_neighbors() const
 float Options::statistical_outlier_removal_factor() const
 {
     return sor_factor_;
+}
+
+bool Options::recompute_normals() const
+{
+    return vars_.count("recompute-normals");
 }
 
 uint32_t Options::normal_estimation_kn() const

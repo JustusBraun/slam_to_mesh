@@ -44,6 +44,7 @@ public:
     float statistical_outlier_removal_factor() const;
 
     /// Normal estimation
+    bool recompute_normals() const;
 
     uint32_t normal_estimation_kn() const;
 

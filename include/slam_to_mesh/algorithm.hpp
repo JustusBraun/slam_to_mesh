@@ -27,7 +27,7 @@ lvr2::PointBufferPtr combine_pointclouds(
  */
 void estimate_pointcloud_normals(
     const std::vector<Eigen::Isometry3f>& poses,
-    lvr2::PointBufferPtr& points,
+    const lvr2::PointBufferPtr& points,
     const Options& opts
 );
 

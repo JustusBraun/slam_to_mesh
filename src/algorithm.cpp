@@ -70,12 +70,39 @@ lvr2::PointBufferPtr combine_pointclouds(
         // Store the pose index
         ids_out = std::fill_n(ids_out, scan->numPoints(), pos_idx);
 
-        // TODO: Normals needs special handling, in theory we do not need to worry because we calculate them anyway
+        // If the input scans have normals a normal array has been allocated
+        if (const auto normals = out->getNormalArray())
+        {
+            const auto scan_normals = scan->getNormalArray();
+            if (!scan_normals)
+            {
+                LOG_WARNING("Not all input scans have normals. Scan {} is missing normals", pos_idx);
+                if (!out->removeFloatChannel("normals"))
+                {
+                    LOG_ERROR("Failed to remove normal array 'normals' from PointBuffer");
+                }
+            }
+            // Transform the normals
+            for (size_t i = 0; i < scan->numPoints(); i++)
+            {
+                lvr2::Normal<float> normal(
+                    scan_normals[i * 3 + 0],
+                    scan_normals[i * 3 + 1],
+                    scan_normals[i * 3 + 2]
+                );
+
+                normal = pose.matrix() * normal;
+
+                normals[(out_idx + i) * 3 + 0] = normal.x;
+                normals[(out_idx + i) * 3 + 1] = normal.y;
+                normals[(out_idx + i) * 3 + 2] = normal.z;
+            }
+        }
 
         // Copy the rest of the channels
         for (auto& [name, channel]: *out)
         {
-            if ("points" == name || "frame_id" == name)
+            if ("points" == name || "frame_id" == name || "normals" == name)
             {
                 continue;
             }
@@ -90,7 +117,7 @@ lvr2::PointBufferPtr combine_pointclouds(
 
 void estimate_pointcloud_normals(
     const std::vector<Eigen::Isometry3f>& poses,
-    lvr2::PointBufferPtr& cloud,
+    const lvr2::PointBufferPtr& cloud,
     const Options& opts
 )
 {
@@ -266,7 +293,10 @@ lvr2::PointBufferPtr remove_nan(const lvr2::PointBufferPtr& buffer)
     {
         return std::isnan(vec.x)
             || std::isnan(vec.y)
-            || std::isnan(vec.z);
+            || std::isnan(vec.z)
+            || std::isinf(vec.x)
+            || std::isinf(vec.y)
+            || std::isinf(vec.z);
     };
     auto range = PointBufferRange(*buffer);
     std::vector<bool> mask(buffer->numPoints());
