@@ -29,7 +29,7 @@ Options::Options()
     ;
 
     normal_est_.add_options()
-    ("recompute", "Recompute the normals if the input scans already have them")
+    ("recompute-normals", "Recompute the normals if the input scans already have them")
     ("kn", po::value<uint32_t>(&normal_kn_)->default_value(50), "Number of nearest neighbor points used in normal estimation")
     ("ki", po::value<uint32_t>(&normal_ki_)->default_value(50), "Number of nearest neighbor normals used in normal interpolation (smoothing)")
     ("normal-estimation-method", po::value<uint32_t>(&normal_estimation_method_)->default_value(3), "Normal estimation method to use. Choose from 0: PCA, 1: RANSAC, 2: IPCA ilikebigbits, 3: IPCA exact (default)")
