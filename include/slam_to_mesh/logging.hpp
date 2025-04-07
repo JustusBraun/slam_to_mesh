@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lvr2/util/Logging.hpp>
+#include <lvr2/geometry/BaseVector.hpp>
 #include <format>
 #include <filesystem>
 
@@ -16,6 +17,26 @@
 
 
 // Custom formatters
+template <typename Scalar>
+struct std::formatter<lvr2::BaseVector<Scalar>>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        // Do not parse anything for now
+        auto pos = ctx.begin();
+        while(pos != ctx.end() && *pos != '}')
+        {
+            pos++;
+        }
+        return pos;
+    }
+
+    auto format(const lvr2::BaseVector<Scalar>& vec, format_context& ctx) const
+    {
+        return std::format_to(ctx.out(), "[{}, {}, {}]", vec.x, vec.y, vec.z);
+    }
+
+};
 
 // C++26 has support for formatting paths
 #if __cplusplus <= 202302L
