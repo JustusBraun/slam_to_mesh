@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>slam_to_mesh</name>
+  <version>0.0.1</version>
+  <description>A tool to create triangle meshes from the output of lidar slam systems.</description>
+  <maintainer email="jubraun@uos.de">JustusBraun</maintainer>
+  <license>MIT</license>
+
+  <!-- Dependencies -->
+  <buildtool_depend>cmake</buildtool_depend>
+
+  <depend>lvr2</depend>
+  <depend>eigen</depend>
+
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+
+</package>

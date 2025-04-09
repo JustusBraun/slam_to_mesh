@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(slam_to_mesh)
+project(slam_to_mesh VERSION 0.0.1)
 
 
 # Main dependency is LVR2
