@@ -9,8 +9,9 @@
 #include <lvr2/algorithm/NormalAlgorithms.hpp>
 #include <lvr2/algorithm/CleanupAlgorithms.hpp>
 #include <lvr2/reconstruction/AdaptiveKSearchSurface.hpp>
-#include <lvr2/reconstruction/FastReconstruction.hpp>
 #include <lvr2/reconstruction/FastBox.hpp>
+#include <lvr2/reconstruction/FastBoxTables.hpp>
+#include <lvr2/reconstruction/FastReconstruction.hpp>
 #include <lvr2/reconstruction/PointsetGrid.hpp>
 #include <lvr2/registration/OctreeReduction.hpp>
 #include <lvr2/geometry/PMPMesh.hpp>
@@ -183,12 +184,99 @@ void estimate_pointcloud_normals(
 }
 
 
+template <typename BoxT>
+inline void link_neighbours(std::unordered_map<Eigen::Vector3i, BoxT>& shells, const Eigen::Vector3i& index, BoxT& box)
+{
+    size_t neighbor_index = 0;
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            {
+                auto neighbor_it = shells.find(index + Eigen::Vector3i(dx, dy, dz));
+
+                // If it exists, save pointer in box
+                if (neighbor_it != shells.end())
+                {
+                    const auto& neighbor = neighbor_it->second;
+                    box.setNeighbor(neighbor_index, &neighbor_it->second);
+
+                    // Update the m_intersections array which is normally set during the getSurface calls.
+                    // By filling this data the cell knows if a corner vertex was already created by
+                    // a neighbor cell.
+
+                    // Iterate all 12 edges. Maybe this can be done without iterating all edges.
+                    for (int isec = 0; isec < 12; isec++)
+                    {
+                        // 3 neighbors per edge
+                        for ( int i = 0; i < 3; i++)
+                        {
+                            const int idx = lvr2::neighbor_table[isec][i];
+                            if (idx != neighbor_index)
+                            {
+                                continue;
+                            }
+
+                            if (!neighbor.m_intersections[lvr2::neighbor_vertex_table[isec][i]])
+                            {
+                                continue;
+                            }
+                            box.m_intersections[isec] = neighbor.m_intersections[lvr2::neighbor_vertex_table[isec][i]];
+                        }
+                    }
+                }
+                neighbor_index++;
+            }
+        }
+    }
+}
+
+
+void iterate_outer_shell(
+    const Eigen::Vector3i& min,
+    const Eigen::Vector3i& max,
+    std::function<void(const Eigen::Vector3i&)> func
+)
+{
+    // Iterate the cube walls
+    // XY plane with z max and z min
+    for (int x = min.x(); x < max.x(); x++)
+    {
+        for (int y = min.y(); y < max.y(); y++)
+        {
+            func(Eigen::Vector3i(x, y, min.z()));
+            func(Eigen::Vector3i(x, y, max.z()));
+        }
+    }
+    // XZ plane with y max and y min
+    for (int x = min.x(); x < max.x(); x++)
+    {
+        for (int z = min.z() + 1; z < max.z() - 1; z++)
+        {
+            func(Eigen::Vector3i(x, min.y(), z));
+            func(Eigen::Vector3i(x, max.y(), z));
+        }
+    }
+    // YZ plane with x max and x min
+    for (int y = min.y() + 1; y < max.y() - 1; y++)
+    {
+        for (int z = min.z() + 1; z < max.z() - 1; z++)
+        {
+            func(Eigen::Vector3i(min.x(), y, z));
+            func(Eigen::Vector3i(max.x(), y, z));
+        }
+    }
+}
+
+
 std::shared_ptr<lvr2::BaseMesh<lvr2::BaseVector<float>>> reconstruct_mesh(
     const lvr2::PointBufferPtr points,
     const Options& opts
 )
 {
     using Vector = lvr2::BaseVector<float>;
+    using Eigen::Vector3i;
     using Box = lvr2::BilinearFastBox<Vector>;
     using Grid = lvr2::PointsetGrid<Vector, Box>;
 
@@ -201,22 +289,95 @@ std::shared_ptr<lvr2::BaseMesh<lvr2::BaseVector<float>>> reconstruct_mesh(
         0
     );
 
-    auto grid = std::make_shared<Grid>(
-        opts.voxel_size(),
-        surface,
-        surface->getBoundingBox(),
-        true,
-        true
-    );
-    
-    grid->calcDistanceValues();
+    const lvr2::BoundingBox<Vector> bb = surface->getBoundingBox();
 
-    lvr2::FastReconstruction<Vector, Box> reconstruction(grid);
+    // Slice the bounding box in 25m^3 cubes
+    const float edge_length = 25.0;
+    std::vector<lvr2::BoundingBox<Vector>> bboxes;
+    const Vector minimum = bb.getMin();
+    const Vector maximum = bb.getMax();
 
+    const size_t x_steps = std::ceil(bb.getXSize() / edge_length);
+    const size_t y_steps = std::ceil(bb.getYSize() / edge_length);
+    const size_t z_steps = std::ceil(bb.getZSize() / edge_length);
+
+    for (size_t z = 0; z < z_steps; z++)
+    {
+        for (size_t y = 0; y < y_steps; y++)
+        {
+            for (size_t x = 0; x < x_steps; x++)
+            {
+                const Vector displacement(x * edge_length, y * edge_length, z * edge_length);
+                const Vector min = bb.getMin() + displacement;
+                Vector max = min + Vector(edge_length, edge_length, edge_length);
+
+                max.x = std::min(max.x, maximum.x);
+                max.y = std::min(max.y, maximum.y);
+                max.z = std::min(max.z, maximum.z);
+
+                bboxes.push_back(lvr2::BoundingBox<Vector>(min, max));
+            }
+        }
+    }
+
+
+    // The output mesh instance
     auto mesh = std::make_shared<lvr2::PMPMesh<Vector>>();
 
-    reconstruction.getMesh(*mesh);
-    
+    std::unordered_map<Vector3i, Box> shells;
+    // Reconstruct the mesh one chunk at a time. This consumes less memory than
+    // creating one big hash grid and therefore fits into ram, which makes it
+    // faster as the need for swapping pages is eliminated.
+    // TODO: Figure out how to suppress the output from the loop
+    for (const auto& bounds: bboxes)
+    {
+        auto grid = std::make_shared<Grid>(
+            opts.voxel_size(),
+            surface,
+            bounds,
+            true,
+            true
+        );
+
+        // Add neighbour entries for the boxes at the edge of the bounding box to boxes in the
+        // next bounding box. This ensures that the mesh parts are connected
+        // Calculate the shell of the current grid
+        Vector half_voxel_size(opts.voxel_size() / 2.0, opts.voxel_size() / 2.0, opts.voxel_size() / 2.0);
+        Vector3i min = grid->calcIndex(bounds.getMin() + half_voxel_size);
+        Vector3i max = grid->calcIndex(bounds.getMax() - half_voxel_size);
+
+        // Link the shell cells to the neighbor cells already created by processed bounding boxes
+        iterate_outer_shell(
+            min, max,
+            [&](const Eigen::Vector3i& index)
+            {
+                auto it = grid->getCells().find(index);
+                if (it != grid->getCells().end())
+                {
+                    link_neighbours(shells, index, *it->second);
+                }
+            }
+        );
+
+        // Reconstruct the part
+        grid->calcDistanceValues();
+        lvr2::FastReconstruction<Vector, Box> reconstruction(grid);
+        reconstruction.getMesh(*mesh);
+
+        // Save the shell cells of the current grid for later
+        iterate_outer_shell(
+            min, max,
+            [&](const Eigen::Vector3i& index)
+            {
+                auto it = grid->getCells().find(index);
+                if (it != grid->getCells().end())
+                {
+                    shells.insert_or_assign(index, *it->second);
+                }
+            }
+        );
+    }
+
     if (opts.rda_threshold() > 0)
     {
         lvr2::removeDanglingCluster(*mesh, opts.rda_threshold());
