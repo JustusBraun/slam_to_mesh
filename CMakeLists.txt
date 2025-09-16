@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(slam_to_mesh VERSION 0.0.1)
 
+# Build in Release mode if not specified
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release")
+endif()
 
 # Main dependency is LVR2
 find_package(LVR2 REQUIRED)
