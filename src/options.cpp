@@ -18,6 +18,8 @@ Options::Options()
     ("scans", po::value<string>()->required(), "Path to a directory containing the individual lidar scans")
     ("range", po::value<std::vector<size_t>>()->multitoken(),
      "Limits the range of scans & poses to process to [arg0, arg1)")
+    ("displacement", po::value<std::vector<float>>()->multitoken(),
+     "Select a subset of the input scans based on displacement (m) and orientation delta (rad). Example: '--displacement 0.3 1.0' includes a scan if it's pose has a displacement larger than or equal to 0.3m or an orientation delta larger than or equal to 1.0rad compared to the last included scan.")
     ("poses-output-file", po::value<string>(), "Save the poses to the specified file")
     ("poses-output-format", po::value<string>()->default_value("kitty"), "The format to save the poses in")
     ("output-directory", po::value<string>(), "The directory to output converted data to")
@@ -91,6 +93,17 @@ std::optional<std::pair<size_t, size_t>> Options::get_processing_range() const
     {
         const auto range = vars_["range"].as<std::vector<size_t>>();
         return std::pair(range.at(0), range.at(1));
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ScanSelectionSettings> Options::get_scan_selection_settings() const
+{
+    if (vars_.count("displacement"))
+    {
+        const auto args = vars_["displacement"].as<std::vector<float>>();
+        return ScanSelectionSettings{.min_displacement = args[0], .min_rotation = args[1]};
     }
 
     return std::nullopt;

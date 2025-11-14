@@ -83,6 +83,42 @@ int main(int argc, char** argv)
 
         LOG_INFO("Using dataset range [{}, {})", range.first, range.second);
     }
+
+    if (auto settings = options.get_scan_selection_settings())
+    {
+        LOG_INFO(
+            "Selecting scan poses with min displacement {} and min rotation {}",
+            settings->min_displacement,
+            settings->min_rotation
+        );
+
+        std::vector<Eigen::Isometry3f> poses_to_keep;
+        std::vector<lvr2::PointBufferPtr> scans_to_keep;
+
+        // Keep the first pose
+        poses_to_keep.emplace_back(dataset.poses.front());
+        scans_to_keep.emplace_back(dataset.scans.front());
+
+        for (size_t i = 1; i < dataset.poses.size(); i++)
+        {
+            const Eigen::Isometry3f prev = poses_to_keep.back();
+            const Eigen::Isometry3f& cur = dataset.poses[i];
+            const float dist = (cur.translation() - prev.translation()).norm();
+            const float rot = Eigen::Quaternionf(cur.rotation()).angularDistance(Eigen::Quaternionf(prev.rotation()));
+
+            if (dist >= settings->min_displacement || rot >= settings->min_rotation)
+            {
+                poses_to_keep.push_back(dataset.poses[i]);
+                scans_to_keep.push_back(dataset.scans[i]);
+            }
+        }
+
+        dataset.poses = std::move(poses_to_keep);
+        dataset.scans = std::move(scans_to_keep);
+    }
+
+    LOG_INFO("Using {} scan poses", dataset.poses.size());
+
     
     if (!options.output_directory().empty())
     {

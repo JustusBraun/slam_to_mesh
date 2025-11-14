@@ -2,6 +2,12 @@
 
 #include <boost/program_options.hpp>
 #include <filesystem>
+#include <optional>
+
+struct ScanSelectionSettings {
+    float min_displacement;
+    float min_rotation;
+};
 
 class Options
 : private boost::program_options::options_description
@@ -24,6 +30,8 @@ public:
     std::filesystem::path get_scans_path() const;
 
     std::optional<std::pair<size_t, size_t>> get_processing_range() const;
+
+    std::optional<ScanSelectionSettings> get_scan_selection_settings() const;
 
     bool save_poses() const;
 
