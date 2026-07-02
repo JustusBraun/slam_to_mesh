@@ -5,6 +5,10 @@
 #include <slam_to_mesh/algorithm.hpp>
 #include <slam_to_mesh/logging.hpp>
 
+#ifdef HAS_ROS2_BAG_SUPPORT
+#include <slam_to_mesh/io/rosbag_reader.hpp>
+#endif
+
 #include <lvr2/util/Logging.hpp>
 #include <lvr2/util/TransformUtils.hpp>
 #include <lvr2/types/Model.hpp>
@@ -19,40 +23,55 @@ namespace fs = std::filesystem;
 
 int main(int argc, char** argv)
 {
+    lvr2::logout::get().setLogLevel(lvr2::LogLevel::info);
+
     Options options;
     if (!options.parse_arguments(argc, argv))
     {
         return -1;
     }
 
-    lvr2::logout::get().setLogLevel(lvr2::LogLevel::info);
-
-    LOG_INFO("Reading poses from {}", options.get_poses_path());
-
-    std::vector<Eigen::Isometry3f> poses = read_poses(options.get_poses_path(), options.get_poses_filetype_hint());
-
-    LOG_INFO("Got {} poses", poses.size());
-
-    // Read the pointclouds
-    LOG_INFO("Reading scans from {}", options.get_scans_path());
-
-    std::vector<lvr2::PointBufferPtr> scans = read_scans(options.get_scans_path());
-
-    LOG_INFO("Got {} scans", scans.size());
-
-    if (scans.size() != poses.size())
-    {
-        LOG_WARNING("Poses and scans differ in size! {} vs {}", poses.size(), scans.size());
-        LOG_WARNING("This can have unintended side effects if the poses and scans do not belong together!");
-        const size_t min = std::min(poses.size(), scans.size());
-        LOG_WARNING("Resizing to {} poses and scans!", min);
-        poses.resize(min);
-        scans.resize(min);
-    }
-
     Dataset dataset;
-    dataset.poses = std::move(poses);
-    dataset.scans = std::move(scans);
+
+    if (options.has_bag())
+    {
+#ifdef HAS_ROS2_BAG_SUPPORT
+        LOG_INFO("Reading bag from {}", options.get_bag_path());
+        LOG_INFO("Using pointcloud topic '{}' and odometry topic '{}'", options.get_bag_pointcloud_topic(), options.get_bag_odometry_topic());
+        dataset = read_rosbag(options.get_bag_path(), options.get_bag_pointcloud_topic(), options.get_bag_odometry_topic());
+#else
+        LOG_ERROR("ROS2 bag support is not compiled in!");
+        return -1;
+#endif
+    }
+    else
+    {
+        LOG_INFO("Reading poses from {}", options.get_poses_path());
+
+        std::vector<Eigen::Isometry3f> poses = read_poses(options.get_poses_path(), options.get_poses_filetype_hint());
+
+        LOG_INFO("Got {} poses", poses.size());
+
+        // Read the pointclouds
+        LOG_INFO("Reading scans from {}", options.get_scans_path());
+
+        std::vector<lvr2::PointBufferPtr> scans = read_scans(options.get_scans_path());
+
+        LOG_INFO("Got {} scans", scans.size());
+
+        if (scans.size() != poses.size())
+        {
+            LOG_WARNING("Poses and scans differ in size! {} vs {}", poses.size(), scans.size());
+            LOG_WARNING("This can have unintended side effects if the poses and scans do not belong together!");
+            const size_t min = std::min(poses.size(), scans.size());
+            LOG_WARNING("Resizing to {} poses and scans!", min);
+            poses.resize(min);
+            scans.resize(min);
+        }
+
+        dataset.poses = std::move(poses);
+        dataset.scans = std::move(scans);
+    }
 
     if (options.get_processing_range())
     {

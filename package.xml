@@ -12,6 +12,12 @@
   <depend>lvr2</depend>
   <depend>eigen</depend>
 
+  <!-- Optional ROS2 dependencies for bag reading support -->
+  <depend>rosbag2_cpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>rclcpp</depend>
+
   <export>
     <build_type>cmake</build_type>
   </export>
