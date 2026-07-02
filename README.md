@@ -42,6 +42,20 @@ slam_to_mesh --scans /PATH/TO/POINT_CLOUD_DIR/ --poses /PATH/TO/POSES_FILE.xyz -
 slam_to_mesh --help
 ```
 
+## ROS2 Bag files
+
+We also support the use of ROS2 Bag files as input.
+The bag file is expected to contain a `sensor_msgs/PointCloud2` topic and an `nav_msgs/Odometry` topic with the corresponding poses.
+The point cloud and odometry messages need to have the exact same timestamp, which is expected when using Lidar Odometry.
+
+```bash
+# This command will read the point clouds and poses from the bag file topics and save the reconstructed triangle mesh to 'mesh.ply'
+slam_to_mesh --bag /PATH/TO/BAG/FILE --bag-pointcloud-topic /registered --bag-odometry-topic /odom
+```
+
+> [!NOTE]
+> ROS2 Bag input is only available when compiling with a sourced ROS2 environment.
+
 ## Tuning the parameters
 
 ### Mesh "resolution"
