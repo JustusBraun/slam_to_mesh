@@ -1,4 +1,5 @@
 #include <slam_to_mesh/options.hpp>
+#include <slam_to_mesh/scan_filter.hpp>
 #include <slam_to_mesh/sort.hpp>
 #include <slam_to_mesh/io/poses.hpp>
 #include <slam_to_mesh/io/scans.hpp>
@@ -31,6 +32,8 @@ int main(int argc, char** argv)
         return -1;
     }
 
+    ScanFilter filter(options.get_processing_range(), options.get_scan_selection_settings());
+
     Dataset dataset;
 
     if (options.has_bag())
@@ -38,7 +41,9 @@ int main(int argc, char** argv)
 #ifdef HAS_ROS2_BAG_SUPPORT
         LOG_INFO("Reading bag from {}", options.get_bag_path());
         LOG_INFO("Using pointcloud topic '{}' and odometry topic '{}'", options.get_bag_pointcloud_topic(), options.get_bag_odometry_topic());
-        dataset = read_rosbag(options.get_bag_path(), options.get_bag_pointcloud_topic(), options.get_bag_odometry_topic());
+        auto ds = read_rosbag(options.get_bag_path(), options.get_bag_pointcloud_topic(), options.get_bag_odometry_topic(), filter);
+        if (!ds) return -1;
+        dataset = std::move(*ds);
 #else
         LOG_ERROR("ROS2 bag support is not compiled in!");
         return -1;
@@ -52,91 +57,20 @@ int main(int argc, char** argv)
 
         LOG_INFO("Got {} poses", poses.size());
 
-        // Read the pointclouds
         LOG_INFO("Reading scans from {}", options.get_scans_path());
 
-        std::vector<lvr2::PointBufferPtr> scans = read_scans(options.get_scans_path());
-
-        LOG_INFO("Got {} scans", scans.size());
-
-        if (scans.size() != poses.size())
-        {
-            LOG_WARNING("Poses and scans differ in size! {} vs {}", poses.size(), scans.size());
-            LOG_WARNING("This can have unintended side effects if the poses and scans do not belong together!");
-            const size_t min = std::min(poses.size(), scans.size());
-            LOG_WARNING("Resizing to {} poses and scans!", min);
-            poses.resize(min);
-            scans.resize(min);
-        }
-
-        dataset.poses = std::move(poses);
-        dataset.scans = std::move(scans);
-    }
-
-    if (options.get_processing_range())
-    {
-        auto range = options.get_processing_range().value();
-
-        if (range.first >= range.second)
-        {
-            LOG_ERROR("Specified range [{}, {}) is invalid!", range.first, range.second);
-            return -1;
-        }
-
-        if (range.second > dataset.scans.size())
-        {
-            LOG_ERROR(
-                "Specified range end '{}' cannot be larger than the number of scans & poses! ({})",
-                range.second, dataset.scans.size()
-            );
-            return -1;
-        }
-
-        range.second = std::min(dataset.poses.size(), range.second);
-
-        dataset.poses.erase(dataset.poses.begin(), dataset.poses.begin() + range.first);
-        dataset.scans.erase(dataset.scans.begin(), dataset.scans.begin() + range.first);
-        
-        dataset.poses.resize(range.second - range.first);
-        dataset.scans.resize(range.second - range.first);
-
-        LOG_INFO("Using dataset range [{}, {})", range.first, range.second);
-    }
-
-    if (auto settings = options.get_scan_selection_settings())
-    {
-        LOG_INFO(
-            "Selecting scan poses with min displacement {} and min rotation {}",
-            settings->min_displacement,
-            settings->min_rotation
-        );
-
-        std::vector<Eigen::Isometry3f> poses_to_keep;
-        std::vector<lvr2::PointBufferPtr> scans_to_keep;
-
-        // Keep the first pose
-        poses_to_keep.emplace_back(dataset.poses.front());
-        scans_to_keep.emplace_back(dataset.scans.front());
-
-        for (size_t i = 1; i < dataset.poses.size(); i++)
-        {
-            const Eigen::Isometry3f prev = poses_to_keep.back();
-            const Eigen::Isometry3f& cur = dataset.poses[i];
-            const float dist = (cur.translation() - prev.translation()).norm();
-            const float rot = Eigen::Quaternionf(cur.rotation()).angularDistance(Eigen::Quaternionf(prev.rotation()));
-
-            if (dist >= settings->min_displacement || rot >= settings->min_rotation)
-            {
-                poses_to_keep.push_back(dataset.poses[i]);
-                scans_to_keep.push_back(dataset.scans[i]);
-            }
-        }
-
-        dataset.poses = std::move(poses_to_keep);
-        dataset.scans = std::move(scans_to_keep);
+        auto ds = read_scans(options.get_scans_path(), poses, filter);
+        if (!ds) return -1;
+        dataset = std::move(*ds);
     }
 
     LOG_INFO("Using {} scan poses", dataset.poses.size());
+
+    if (dataset.scans.empty())
+    {
+        LOG_ERROR("No scans were selected!");
+        return -1;
+    }
 
     
     if (!options.output_directory().empty())

@@ -16,6 +16,7 @@
 
 #include <Eigen/Geometry>
 
+#include <deque>
 #include <limits>
 
 namespace fs = std::filesystem;
@@ -136,11 +137,11 @@ static Eigen::Isometry3f odometry_to_pose(const nav_msgs::msg::Odometry& msg)
     return pose;
 }
 
-Dataset read_rosbag(
+std::optional<Dataset> read_rosbag(
     const fs::path& bag_path,
     const std::string& pointcloud_topic,
-    const std::string& odometry_topic
-)
+    const std::string& odometry_topic,
+    ScanFilter& filter)
 {
     Dataset dataset;
 
@@ -156,8 +157,42 @@ Dataset read_rosbag(
     rclcpp::Serialization<sensor_msgs::msg::PointCloud2> pc_serialization;
     rclcpp::Serialization<nav_msgs::msg::Odometry> odom_serialization;
 
-    std::vector<std::pair<int64_t, lvr2::PointBufferPtr>> scans;
-    std::vector<std::pair<int64_t, Eigen::Isometry3f>> poses;
+    using PendingScan = std::pair<int64_t, lvr2::PointBufferPtr>;
+    using PendingPose = std::pair<int64_t, Eigen::Isometry3f>;
+
+    std::deque<PendingScan> pending_scans;
+    std::deque<PendingPose> pending_poses;
+    size_t matched_index = 0;
+
+    auto try_match = [&]() {
+        while (!pending_scans.empty() && !pending_poses.empty())
+        {
+            auto& s = pending_scans.front();
+            auto& p = pending_poses.front();
+
+            if (s.first == p.first)
+            {
+                if (filter(matched_index, p.second))
+                {
+                    dataset.scans.push_back(std::move(s.second));
+                    dataset.poses.push_back(std::move(p.second));
+                }
+                ++matched_index;
+                pending_scans.pop_front();
+                pending_poses.pop_front();
+            }
+            else if (s.first < p.first)
+            {
+                LOG_WARNING("No matching odometry for pointcloud at t={}", s.first);
+                pending_scans.pop_front();
+            }
+            else
+            {
+                LOG_WARNING("No matching pointcloud for odometry at t={}", p.first);
+                pending_poses.pop_front();
+            }
+        }
+    };
 
     while (reader.has_next())
     {
@@ -172,7 +207,8 @@ Dataset read_rosbag(
             if (buffer)
             {
                 int64_t ts = ros_time_to_ns(cloud_msg.header.stamp);
-                scans.emplace_back(ts, std::move(buffer));
+                pending_scans.emplace_back(ts, std::move(buffer));
+                try_match();
             }
         }
         else if (msg->topic_name == odometry_topic)
@@ -180,35 +216,31 @@ Dataset read_rosbag(
             nav_msgs::msg::Odometry odom_msg;
             odom_serialization.deserialize_message(&serialized_msg, &odom_msg);
             int64_t ts = ros_time_to_ns(odom_msg.header.stamp);
-            poses.emplace_back(ts, odometry_to_pose(odom_msg));
+            pending_poses.emplace_back(ts, odometry_to_pose(odom_msg));
+            try_match();
         }
     }
 
     reader.close();
 
-    LOG_INFO("Read {} pointclouds and {} odometry poses from bag", scans.size(), poses.size());
+    LOG_INFO("Read {} pointclouds and {} odometry poses from bag", pending_scans.size() + dataset.scans.size(), pending_poses.size() + dataset.poses.size());
 
-    size_t i = 0;
-    size_t j = 0;
-    while (i < scans.size() && j < poses.size())
+    // Drain remaining unmatched entries
+    while (!pending_scans.empty())
     {
-        if (scans[i].first == poses[j].first)
-        {
-            dataset.scans.push_back(std::move(scans[i].second));
-            dataset.poses.push_back(std::move(poses[j].second));
-            ++i;
-            ++j;
-        }
-        else if (scans[i].first < poses[j].first)
-        {
-            LOG_WARNING("No matching odometry for pointcloud at t={}", scans[i].first);
-            ++i;
-        }
-        else
-        {
-            LOG_WARNING("No matching pointcloud for odometry at t={}", poses[j].first);
-            ++j;
-        }
+        LOG_WARNING("No matching odometry for pointcloud at t={}", pending_scans.front().first);
+        pending_scans.pop_front();
+    }
+    while (!pending_poses.empty())
+    {
+        LOG_WARNING("No matching pointcloud for odometry at t={}", pending_poses.front().first);
+        pending_poses.pop_front();
+    }
+
+    if (!filter.is_valid(matched_index))
+    {
+        LOG_ERROR("Specified scan range is invalid for the available number of matched scans!");
+        return std::nullopt;
     }
 
     LOG_INFO("Matched {} paired scans and poses", dataset.scans.size());

@@ -29,6 +29,7 @@ set(SLAM_TO_MESH_SOURCES
     src/io/poses.cpp
     src/io/scans.cpp
     src/algorithm.cpp
+    src/scan_filter.cpp
 )
 
 if(rosbag2_cpp_FOUND AND sensor_msgs_FOUND AND nav_msgs_FOUND AND rclcpp_FOUND)
