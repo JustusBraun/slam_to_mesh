@@ -120,9 +120,9 @@ static lvr2::PointBufferPtr pointcloud2_to_buffer(const sensor_msgs::msg::PointC
 static Eigen::Isometry3f odometry_to_pose(const nav_msgs::msg::Odometry& msg)
 {
     Eigen::Vector3f position(
-        -static_cast<float>(msg.pose.pose.position.x),
-        -static_cast<float>(msg.pose.pose.position.y),
-        -static_cast<float>(msg.pose.pose.position.z)
+        static_cast<float>(msg.pose.pose.position.x),
+        static_cast<float>(msg.pose.pose.position.y),
+        static_cast<float>(msg.pose.pose.position.z)
     );
 
     Eigen::Quaternionf orientation(
