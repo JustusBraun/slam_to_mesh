@@ -1,4 +1,5 @@
 #include <slam_to_mesh/options.hpp>
+#include <slam_to_mesh/logging.hpp>
 #include <iostream>
 #include <cstdint>
 
@@ -13,9 +14,14 @@ Options::Options()
 {
     add_options()
     ("help", "output this message")
-    ("poses", po::value<string>()->required(), "Path to a file containing a pose for each input scan. Supported formats are 'kitti', 'tum' and 'hba'")
+    ("poses", po::value<string>(), "Path to a file containing a pose for each input scan. Supported formats are 'kitti', 'tum' and 'hba'")
     ("poses-filetype-hint", po::value<string>()->default_value("kitti"), "An optional hint on the format of the poses file. Otherwise the program tries to infer from the data")
-    ("scans", po::value<string>()->required(), "Path to a directory containing the individual lidar scans")
+    ("scans", po::value<string>(), "Path to a directory containing the individual lidar scans")
+#ifdef HAS_ROS2_BAG_SUPPORT
+    ("bag", po::value<string>(), "Path to a ROS2 bagfile")
+    ("bag-pointcloud-topic", po::value<string>(), "Topic to read sensor_msgs/PointCloud2 messages from")
+    ("bag-odometry-topic", po::value<string>(), "Topic to read nav_msgs/Odometry messages with scan poses from")
+#endif
     ("range", po::value<std::vector<size_t>>()->multitoken(),
      "Limits the range of scans & poses to process to [arg0, arg1)")
     ("displacement", po::value<std::vector<float>>()->multitoken(),
@@ -52,7 +58,7 @@ bool Options::parse_arguments(int argc, char** argv)
 {
     po::store(po::parse_command_line(argc, argv, *this), vars_);
 
-    if (vars_.count("help"))
+    if (argc == 1 || vars_.count("help"))
     {
         std::cout << *this << std::endl;
         return false;
@@ -65,6 +71,28 @@ bool Options::parse_arguments(int argc, char** argv)
     catch(std::exception const& ex)
     {
         std::cout << "Error parsing arguments: " << ex.what() << std::endl;
+        std::cout << *this << std::endl;
+        return false;
+    }
+
+    // Validate input mode
+    bool has_files = vars_.count("poses") && vars_.count("scans");
+#ifdef HAS_ROS2_BAG_SUPPORT
+    bool has_bag = vars_.count("bag") && vars_.count("bag-pointcloud-topic") && vars_.count("bag-odometry-topic");
+#else
+    bool has_bag = false;
+#endif
+
+    if (!has_files && !has_bag)
+    {
+        LOG_ERROR("Provide either (--poses and --scans) or (--bag and topic options).");
+        std::cout << *this << std::endl;
+        return false;
+    }
+
+    if (has_files && has_bag)
+    {
+        LOG_ERROR("Cannot use both file input and bag input.");
         std::cout << *this << std::endl;
         return false;
     }
@@ -196,4 +224,40 @@ uint32_t Options::rda_threshold() const
 uint32_t Options::fill_holes_threshold() const
 {
     return fill_holes_thresh_;
+}
+
+bool Options::has_bag() const
+{
+#ifdef HAS_ROS2_BAG_SUPPORT
+    return vars_.count("bag");
+#else
+    return false;
+#endif
+}
+
+fs::path Options::get_bag_path() const
+{
+#ifdef HAS_ROS2_BAG_SUPPORT
+    return fs::path(vars_["bag"].as<std::string>());
+#else
+    return fs::path();
+#endif
+}
+
+std::string Options::get_bag_pointcloud_topic() const
+{
+#ifdef HAS_ROS2_BAG_SUPPORT
+    return vars_["bag-pointcloud-topic"].as<std::string>();
+#else
+    return std::string();
+#endif
+}
+
+std::string Options::get_bag_odometry_topic() const
+{
+#ifdef HAS_ROS2_BAG_SUPPORT
+    return vars_["bag-odometry-topic"].as<std::string>();
+#else
+    return std::string();
+#endif
 }

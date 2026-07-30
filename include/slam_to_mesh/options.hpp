@@ -35,6 +35,14 @@ public:
 
     bool save_poses() const;
 
+    bool has_bag() const;
+
+    std::filesystem::path get_bag_path() const;
+
+    std::string get_bag_pointcloud_topic() const;
+
+    std::string get_bag_odometry_topic() const;
+
     std::filesystem::path poses_output_file() const;
 
     std::string poses_output_format() const;
